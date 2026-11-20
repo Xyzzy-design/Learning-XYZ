@@ -286,7 +286,7 @@ function makeRound(key, L) {
 function renderHome() {
   const root = $('#home');
   root.replaceChildren();
-  root.append(subjectBackBar('🧮 Math'));
+  root.append(subjectBackBar('🧮 Math'),activityArt());
 
   root.append(el('h2', {}, '1️⃣ Pick your level'), el('div', {class: 'levels'}, ...LEVELS.map((l, i) =>
     el('button', {class: 'card level' + (S.level === i + 1 ? ' sel' : ''), 'aria-pressed':String(S.level === i + 1),
@@ -402,6 +402,7 @@ function check(i) {
     p.card.classList.remove('bad'); p.card.classList.add('ok');
     p.mark.textContent = '⭐'; p.inp.readOnly = true;
     S.stars++;
+    S.petEarned = Math.min(Number.MAX_SAFE_INTEGER, (Number.isSafeInteger(S.petEarned) && S.petEarned >= 0 ? S.petEarned : 0) + 1);
     if (p.tries === 0) {
       G.streak++;
       S.bestStreak = Math.max(S.bestStreak || 0, G.streak);
@@ -531,7 +532,7 @@ function renderTrophies() {
   const prog = el('div', {class: 'progress'}, el('div', {style: `width:${next ? S.stars / next.stars * 100 : 100}%`}));
   root.append(backBar('🏆 My Trophies', '#f57f17'),
     el('div', {class: 'card hello'}, el('div', {class: 'mascot'}, '🦉'),
-      el('div', {class: 'bubble'}, `${nm()}, you have collected ⭐ ${S.stars} stars!`, el('br'),
+      el('div', {class: 'bubble'}, `${nm()}, you have earned ⭐ ${S.stars} Math stars!`, el('br'),
         next ? `Only ${next.stars - S.stars} more to unlock ${next.icon} ${next.name}!` : 'You unlocked every star badge! 🤩',
         el('br'), `Best streak: 🔥 ${S.bestStreak || 0} in a row`, prog)));
 
@@ -551,7 +552,7 @@ function renderTrophies() {
 
   root.append(el('div', {class: 'row', style: 'margin-top:24px'}, el('button', {class: 'btn small', style: 'background:#b0bec5', onclick: () => {
     if (!confirm('Erase all stars, badges and best times on this device?')) return;
-    S = Object.assign(defaults(), {name: S.name, level: S.level, sound: S.sound});
+    S = Object.assign(defaults(), {name: S.name, level: S.level, sound: S.sound, petEarned: Number.isSafeInteger(S.petEarned) && S.petEarned >= 0 ? S.petEarned : 0});
     save(); updateHeader(); renderTrophies();
   }}, '🗑️ Reset my progress')));
 }

@@ -145,13 +145,6 @@ const ScienceSubject = (() => {
       return {...task,options:choices.map(choice => choice.text),rationales:choices.map(choice => choice.rationale),answer:choices.findIndex(choice => choice.correct)};
     });
   }
-  function createPreview(family, level, recent = [], random = Math.random) {
-    return {family,level,tasks:chooseRound(family,level,recent,random)};
-  }
-  function tasksForRound(family, level, recent = [], preview = null, random = Math.random) {
-    if (preview?.family === family && preview.level === level) return preview.tasks;
-    return chooseRound(family,level,recent,random);
-  }
   const storageKey = 'learningPlayground.science.v1';
   const badgeDefinitions = [
     {id:'first',icon:'🔬',name:'First Investigation',description:'Complete a Science round'},
@@ -159,9 +152,9 @@ const ScienceSubject = (() => {
     {id:'persistent',icon:'🛠️',name:'Persistent Investigator',description:'Revise an incorrect answer successfully'},
     {id:'challenger',icon:'🚀',name:'Challenger',description:'Complete a level-4 round'},
   ];
-  let api = null, state = null, round = null, preview = null, launchPreview = null;
+  let api = null, state = null, round = null, invalidPetEarned = false;
   function initialState() {
-    return {version:1,level:1,stars:0,badges:{},done:{},results:{},best:{},recent:{},timers:{},latest:{},legacy:null,legacyImported:true};
+    return {version:1,level:1,stars:0,petEarned:0,badges:{},done:{},results:{},best:{},recent:{},timers:{},latest:{},legacy:null,legacyImported:true};
   }
   const validLevel = value => Number.isInteger(value) && value >= 1 && value <= 4;
   const validMode = value => ['off','stopwatch','countdown'].includes(value);
@@ -179,6 +172,9 @@ const ScienceSubject = (() => {
       if (saved?.version === 1) {
         if (validLevel(saved.level)) fresh.level = saved.level;
         if (Number.isSafeInteger(saved.stars) && saved.stars >= 0) fresh.stars = saved.stars;
+        if (!Object.hasOwn(saved,'petEarned')) fresh.petEarned = fresh.stars;
+        else if (Number.isSafeInteger(saved.petEarned) && saved.petEarned >= 0) fresh.petEarned = saved.petEarned;
+        else { invalidPetEarned = true; api.storageFailure(); }
         for (const badge of badgeDefinitions) if (Number.isFinite(saved.badges?.[badge.id])) fresh.badges[badge.id] = saved.badges[badge.id];
         for (const family of Object.keys(activities)) {
           if (validMode(saved.timers?.[family])) fresh.timers[family] = saved.timers[family];
@@ -207,17 +203,17 @@ const ScienceSubject = (() => {
     return fresh;
   }
   function saveState() {
+    if (invalidPetEarned) return;
     try { localStorage.setItem(storageKey,JSON.stringify(state)); }
     catch { api.storageFailure(); }
   }
   function init(helpers) {
-    api = helpers; state = loadState(); saveState();
+    api = helpers; invalidPetEarned = false; state = loadState(); saveState();
   }
-  function stop() { round = null; preview = null; launchPreview = null; }
-  function startRound(family, preparedPreview = null) {
+  function stop() { round = null; }
+  function startRound(family) {
     const level = state.level, key = `${family}-${level}`;
-    const tasks = tasksForRound(family,level,state.recent[key] || [],preparedPreview);
-    preview = null;
+    const tasks = chooseRound(family,level,state.recent[key] || []);
     state.recent[key] = tasks.map(task => task.id); saveState();
     round = {family,level,tasks,index:0,records:[],attempts:0,hints:level === 1 ? 1 : 0,solved:false,complete:false,finalized:false,mode:'off'};
     renderRound(); api.show('mission'); api.focusHeading();
@@ -253,45 +249,23 @@ const ScienceSubject = (() => {
       document.querySelector('.screen.active .level.sel')?.focus({preventScroll:true});
     }}, el('span', {class:'big'}, level.icon),el('b', {}, `Level ${index + 1}: ${level.name}`),el('small', {}, level.description))));
   }
-  function questionPreview(tasks) {
-    const {el} = api;
-    return el('section', {class:'science-question-preview','aria-labelledby':'sciencePreviewHeading'},
-      el('h2', {id:'sciencePreviewHeading'}, 'Upcoming questions'),
-      el('p', {class:'quiet',role:'status'}, `Preview for Level ${state.level}. Starting the round uses these six questions.`),
-      el('ol', {}, ...tasks.map(task => el('li', {},el('p', {},task.prompt)))));
-  }
   function hub() {
     const {el,$} = api, root = $('#subject');
-    root.replaceChildren(api.subjectBackBar('🔬 Science'),
+    root.replaceChildren(api.subjectBackBar('🔬 Science'),api.art(),
       el('div', {class:'science-welcome'}, el('div', {class:'mascot','aria-hidden':'true'}, '🔬'),el('div', {},el('h2', {}, `What will you discover, ${api.name()}?`),el('p', {}, 'Look closely. Follow the evidence. Try another explanation.'))),
-      el('h2', {}, 'Pick an investigation'));
+      el('h2', {}, '1. Pick your level'),levelSelector(hub),
+      el('h2', {}, '2. Pick an investigation'));
     const tiles = el('div', {class:'subject-grid science-activities'});
     Object.entries(activities).forEach(([family,activity]) => {
       const result = state.results[state.latest[family]];
-      tiles.append(el('button', {class:'subject-tile',style:`--accent:${activity.color}`,onclick:() => api.navigate(`science/${family}`)},chart(scenarios[family][0],true),
+      tiles.append(el('button', {class:'subject-tile',style:`--accent:${activity.color}`,onclick:() => api.navigate(`science/${family}/play`)},chart(scenarios[family][0],true),
         el('span', {class:'subject-copy'},el('b', {}, `${activity.icon} ${activity.title}`),el('small', {}, activity.description),
           result ? el('small', {class:'quiet'}, `Last round: Level ${result.level} · ${result.independent}/6 independent`) : null,
           el('small', {class:'tile-action'}, result ? 'Play again →' : 'Investigate →'))));
     });
-    root.append(tiles,el('div', {class:'science-summary'},el('strong', {}, `⭐ ${state.stars} Science stars`),el('span', {}, `${Object.values(state.done).reduce((sum,value) => sum + value,0)} rounds completed`),
+    root.append(tiles,el('div', {class:'science-summary'},el('strong', {}, `⭐ ${state.stars} Science stars earned`),el('span', {}, `${Object.values(state.done).reduce((sum,value) => sum + value,0)} rounds completed`),
       el('button', {class:'btn small',style:'background:#98631a',onclick:() => api.navigate('science/trophies')}, '🏆 Science trophies')),
-      el('p', {class:'quiet'}, 'Choose a challenge level for each investigation. Stars celebrate completed questions; independent answers are recorded separately. Original illustrative data; independent educator review is pending.'));
-    api.show('subject'); api.focusHeading();
-  }
-  function preparation(family) {
-    const {el,$} = api, activity = activities[family];
-    launchPreview = null;
-    const key = `${family}-${state.level}`;
-    preview = createPreview(family,state.level,state.recent[key] || []);
-    const root = $('#subject');
-    root.replaceChildren(el('div', {class:'bar'},el('button', {class:'btn small',onclick:() => api.navigate('science')}, '← Science'),el('h1', {}, `${activity.icon} ${activity.title}`)),
-      el('p', {}, activity.description),el('h2', {}, 'Challenge level'),levelSelector(() => preparation(family)),questionPreview(preview.tasks));
-    root.append(el('div', {class:'row',style:'justify-content:flex-start'},el('button', {class:'btn',style:`background:${activity.color}`,onclick:() => {
-      launchPreview = preview;
-      api.navigate(`science/${family}/play`);
-    }}, 'Start round →')),
-      el('p', {class:'quiet'}, 'Six questions per round. The questions shown above are used when you start. Unfinished answers are not restored after leaving or reloading.'));
-    if (state.latest[family]) root.append(el('a', {href:`#science/${family}/results`}, 'View last results'));
+      el('p', {class:'quiet'}, 'Choose a challenge level, then an investigation. Stars celebrate completed questions; independent answers are recorded separately. Original illustrative data; independent educator review is pending.'));
     api.show('subject'); api.focusHeading();
   }
   function evidence(task) {
@@ -308,8 +282,9 @@ const ScienceSubject = (() => {
     root.replaceChildren(el('div', {class:'bar'},el('button', {class:'btn small',onclick:() => {
       if (confirm('Leave this round? Earned stars stay saved, but unfinished answers will not be restored.')) api.navigate('science');
     }}, '← Science'),el('h1', {}, activity.title)),
-      el('div', {class:'mission-status'},el('span', {}, `Question ${current.index + 1} of 6 · Level ${current.level}`),el('span', {id:'scienceRoundStars'}, `⭐ ${state.stars} Science stars`),
+      el('div', {class:'mission-status'},el('span', {}, `Question ${current.index + 1} of 6 · Level ${current.level}`),el('span', {id:'scienceRoundStars'}, `⭐ ${state.stars} Science stars earned`),
         el('progress', {id:'scienceProgress',max:'6',value:String(current.records.length),'aria-label':'Science questions completed'})));
+    if (state.latest[current.family]) root.append(el('a', {href:`#science/${current.family}/results`},'View last results (leaves this round)'));
     const bench = el('section', {class:'workbench','aria-label':'Science question'},el('h2', {id:'sciencePrompt'},task.prompt));
     if (current.level === 1) bench.append(el('p', {class:'quiet'}, 'Example: to compare measurements, name the groups, read the same column, and keep the units.'));
     const choices = el('div', {class:'choices',role:'group','aria-labelledby':'sciencePrompt'});
@@ -324,7 +299,8 @@ const ScienceSubject = (() => {
         current.solved = true;
         current.records.push({id:task.id,independent:current.hints === 0 && current.attempts === 0,supported:current.hints > 0 || current.attempts > 0});
         state.stars++;
-        $('#scienceRoundStars').textContent = `⭐ ${state.stars} Science stars`;
+        state.petEarned = Math.min(Number.MAX_SAFE_INTEGER,state.petEarned + 1);
+        $('#scienceRoundStars').textContent = `⭐ ${state.stars} Science stars earned`;
         $('#scienceProgress').value = current.records.length;
         if (current.attempts > 0) unlock('persistent');
         saveState(); api.updateHeader(); api.SND.ok();
@@ -394,7 +370,7 @@ const ScienceSubject = (() => {
   }
   function trophies() {
     const {el,$} = api, root = $('#subject');
-    root.replaceChildren(api.subjectBackBar('🏆 Science trophies'),el('h2', {}, `⭐ ${state.stars} Science stars`),
+    root.replaceChildren(api.subjectBackBar('🏆 Science trophies'),el('h2', {}, `⭐ ${state.stars} Science stars earned`),
       el('p', {}, 'Science rewards are separate from Math rewards.'),el('div', {class:'badges'},...badgeDefinitions.map(badge => el('article', {class:'card badge science-badge'},
         el('span', {class:'big','aria-hidden':'true'},badge.icon),el('b', {},badge.name),el('p', {},state.badges[badge.id] ? '✓ Earned' : 'Not earned yet'),el('small', {},badge.description)))));
     const table = el('table', {class:'data-table'},el('caption', {}, 'Science round records'),el('thead', {},el('tr', {},...['Activity / level','Rounds','Best stopwatch','Best countdown finish'].map(text => el('th', {scope:'col'},text)))));
@@ -407,13 +383,14 @@ const ScienceSubject = (() => {
     if (state.legacy) root.append(el('details', {},el('summary', {}, 'Your previous Ramp Investigation'),el('p', {},`${state.legacy.total} steps completed in the original ${state.legacy.mode} mission on ${new Date(state.legacy.date).toLocaleDateString()}. Preserved as a legacy record; no retrospective stars or badges added.`)));
     root.append(el('div', {class:'row',style:'justify-content:flex-start'},el('button', {class:'btn small',onclick:() => {
       if (!confirm('Reset Science stars, badges, and records on this browser? Math and future-subject progress will stay.')) return;
-      state = initialState();saveState();api.updateHeader();trophies();
+      const petEarned = state.petEarned;
+      state = initialState();state.petEarned = petEarned;saveState();api.updateHeader();trophies();
     }}, 'Reset Science progress')));api.show('subject');api.focusHeading();
   }
   function handleRoute(path) {
     if (!api || !state) return false;
-    if (path === 'science') {launchPreview = null;hub();return true;}
-    if (path === 'science/trophies') {launchPreview = null;trophies();return true;}
+    if (path === 'science') {hub();return true;}
+    if (path === 'science/trophies') {trophies();return true;}
     if (path === 'science/mission') {startRound('forces');return true;}
     if (path === 'science/results') {
       if (!state.latest.forces && state.legacy) {
@@ -425,15 +402,9 @@ const ScienceSubject = (() => {
     }
     const parts = path.split('/');
     if (parts[0] !== 'science' || !Object.hasOwn(activities,parts[1])) return false;
-    if (parts.length === 2) {preparation(parts[1]);return true;}
-    if (parts.length === 3 && parts[2] === 'play') {
-      const preparedPreview = launchPreview;
-      launchPreview = null;
-      startRound(parts[1],preparedPreview);
-      return true;
-    }
+    if (parts.length === 2 || (parts.length === 3 && parts[2] === 'play')) {startRound(parts[1]);return true;}
     if (parts.length === 3 && parts[2] === 'results') {results(parts[1]);return true;}
     return false;
   }
-  return {levels,activities,bank,chooseRound,createPreview,tasksForRound,init,stop,handleRoute,landingReferences,get state(){return state;},get round(){return round;}};
+  return {levels,activities,bank,chooseRound,init,stop,handleRoute,landingReferences,get state(){return state;},get round(){return round;}};
 })();
