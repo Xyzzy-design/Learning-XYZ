@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="720" height="200" viewBox="0 0 720 200">
+  <rect width="720" height="200" rx="24" fill="#d9f3ed"/>
+  <path d="M0 155 Q105 95 205 156 T415 154 T720 146 V200 H0Z" fill="#a8dfc7"/>
+  <circle cx="610" cy="50" r="25" fill="#ffd46a"/>
+  <g fill="#fff" opacity=".8"><circle cx="86" cy="43" r="5"/><circle cx="165" cy="75" r="4"/><circle cx="494" cy="34" r="6"/><circle cx="669" cy="112" r="5"/></g>
+  <g transform="translate(82 76) rotate(-12)">
+    <path d="M0 4 Q35 -7 67 11 V80 Q33 62 0 73Z" fill="#fa857b"/>
+    <path d="M67 11 Q99 -7 134 4 V73 Q100 62 67 80Z" fill="#fcb99c"/>
+    <path d="M67 11 V80 M15 25 L52 29 M15 38 L52 42 M82 29 L120 25 M82 42 L120 38" fill="none" stroke="#fff" stroke-width="4" stroke-linecap="round"/>
+  </g>
+  <g transform="translate(279 25)">
+    <path d="M26 48 L17 12 L53 30 M111 48 L120 12 L84 30" fill="#8b5a48" stroke="#634539" stroke-width="5" stroke-linejoin="round"/>
+    <ellipse cx="69" cy="88" rx="64" ry="68" fill="#b77e5e" stroke="#634539" stroke-width="5"/>
+    <ellipse cx="45" cy="69" rx="23" ry="25" fill="#fff7df"/><ellipse cx="93" cy="69" rx="23" ry="25" fill="#fff7df"/>
+    <circle cx="49" cy="71" r="8" fill="#294446"/><circle cx="89" cy="71" r="8" fill="#294446"/>
+    <circle cx="51" cy="68" r="3" fill="#fff"/><circle cx="91" cy="68" r="3" fill="#fff"/>
+    <path d="M60 92 L78 92 L69 104Z" fill="#f4b545"/>
+    <path d="M35 119 Q69 143 103 119" fill="none" stroke="#81543f" stroke-width="5" stroke-linecap="round"/>
+  </g>
+  <g transform="translate(475 66) rotate(12)">
+    <rect x="0" y="12" width="64" height="65" rx="12" fill="#738de1"/>
+    <rect x="10" y="22" width="44" height="32" rx="6" fill="#e1f8f2"/>
+    <circle cx="22" cy="37" r="5" fill="#385679"/><circle cx="42" cy="37" r="5" fill="#385679"/>
+    <path d="M23 47 H41 M32 12 V0 M25 0 H39 M-8 30 H0 M64 30 H72" stroke="#385679" stroke-width="4" stroke-linecap="round"/>
+  </g>
+  <g fill="#f7a94a"><path d="M565 130 l5 11 12 1 -9 8 3 12 -11 -6 -10 6 2 -12 -9 -8 12 -1Z"/><path d="M237 39 l3 7 8 1 -6 5 2 8 -7 -4 -7 4 2 -8 -6 -5 8 -1Z"/></g>
+</svg>

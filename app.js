@@ -1,23 +1,27 @@
 'use strict';
 // ---------- storage (this device only) ----------
 function defaults() {
-  return {name: '', level: 1, sound: true, timer: {}, stars: 0, best: {}, badges: {}, done: {}, bestStreak: 0, recentJokes: []};
+  return {name: '', level: 1, sound: true, timer: {}, stars: 0, petEarned: 0, best: {}, badges: {}, done: {}, bestStreak: 0, recentJokes: []};
 }
+let mathStorageAvailable = true;
 function load() {
   const s = defaults();
+  let saved;
   try {
-    const saved = JSON.parse(localStorage.getItem(KEY));
+    saved = JSON.parse(localStorage.getItem(KEY));
     if (saved && typeof saved === 'object') Object.assign(s, saved);
-  } catch (e) { /* storage unavailable: play without saving */ }
+  } catch (e) { mathStorageAvailable = false; }
   for (const k of ['timer', 'best', 'badges', 'done']) if (!s[k] || typeof s[k] !== 'object') s[k] = {};
   s.recentJokes = Array.isArray(s.recentJokes) ? s.recentJokes.filter(joke => typeof joke === 'string').slice(-20) : [];
   s.level = Math.min(4, Math.max(1, parseInt(s.level, 10) || 1));
   s.name = String(s.name || '').slice(0, 20);
   s.stars = Number(s.stars) || 0;
+  if (!saved || !Object.hasOwn(saved,'petEarned')) s.petEarned = Number.isSafeInteger(s.stars) && s.stars >= 0 ? s.stars : 0;
+  else if (!Number.isSafeInteger(s.petEarned) || s.petEarned < 0) {s.petEarned = 0; mathStorageAvailable = false;}
   return s;
 }
 let S = load();
-function save() { try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) { /* ignore */ } }
+function save() { try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) { mathStorageAvailable = false; reportStorageFailure(); } }
 const nm = () => S.name || 'Math Star';
 
 // ---------- helpers ----------
@@ -112,7 +116,7 @@ function show(id) {
   $('#sources').hidden = id !== 'subjectPicker';
   window.scrollTo(0, 0);
 }
-function leaveGame() { stopTimer(); G = null; M = null; if (typeof ScienceSubject !== 'undefined') ScienceSubject.stop(); if (typeof EnglishSubject !== 'undefined') EnglishSubject.stop(); }
+function leaveGame() { stopTimer(); G = null; M = null; if (typeof ScienceSubject !== 'undefined') ScienceSubject.stop(); if (typeof EnglishSubject !== 'undefined') EnglishSubject.stop(); if (typeof CodingSubject !== 'undefined') CodingSubject.stop(); }
 function navigate(path) {
   if (location.hash === '#' + path) route();
   else location.hash = path;
@@ -130,6 +134,12 @@ function route() {
   }
   if (path === 'math/mission') {history.replaceState(null, '', '#math/frac');path = 'math/frac';}
   updateHeader();
+  if (path !== 'pet' && typeof Pet !== 'undefined') Pet.handleRoute(path);
+  if (path === 'pet') {
+    if (typeof Pet !== 'undefined') Pet.handleRoute(path);
+    else { $('#pet').replaceChildren(subjectBackBar('Pet home'),el('p', {},'The pet home could not load. Reload the page to try again.'));show('pet');focusHeading(); }
+    return;
+  }
   if (path === 'english' || path.startsWith('english/')) {
     if (typeof EnglishSubject !== 'undefined') {
       if (!EnglishSubject.handleRoute(path)) { history.replaceState(null, '', '#english'); EnglishSubject.handleRoute('english'); }
@@ -144,6 +154,15 @@ function route() {
       if (!ScienceSubject.handleRoute(path)) { history.replaceState(null, '', '#science'); ScienceSubject.handleRoute('science'); }
     } else {
       $('#subject').replaceChildren(subjectBackBar('Science'),el('p', {}, 'Science could not load. Reload the page to try again, or choose Math.'));
+      show('subject');focusHeading();
+    }
+    return;
+  }
+  if (path === 'coding' || path.startsWith('coding/')) {
+    if (typeof CodingSubject !== 'undefined') {
+      if (!CodingSubject.handleRoute(path)) { history.replaceState(null, '', '#coding'); CodingSubject.handleRoute('coding'); }
+    } else {
+      $('#subject').replaceChildren(subjectBackBar('Computer Science'),el('p', {}, 'Computer Science could not load. Reload the page to try again.'));
       show('subject');focusHeading();
     }
     return;
@@ -192,7 +211,7 @@ function renderSubjects() {
   comingSoon.append(previews);
   root.append(grid, comingSoon, el('div', {class: 'row', style: 'justify-content:flex-start;margin-top:24px'},
     el('a', {href: '#sources'}, 'Sources & Learning References'),
-    el('span', {class: 'quiet'}, `${AVAILABLE_SUBJECTS.filter(id => P.results[id] || (id === 'math' && Object.values(S.done).some(Boolean)) || (id === 'english' && typeof EnglishSubject !== 'undefined' && Object.values(EnglishSubject.state?.done || {}).some(Boolean)) || (id === 'science' && typeof ScienceSubject !== 'undefined' && Object.values(ScienceSubject.state?.done || {}).some(Boolean))).length} of ${AVAILABLE_SUBJECTS.length} subjects explored`)));
+    el('span', {class: 'quiet'}, `${AVAILABLE_SUBJECTS.filter(id => P.results[id] || (id === 'math' && Object.values(S.done).some(Boolean)) || (id === 'english' && typeof EnglishSubject !== 'undefined' && Object.values(EnglishSubject.state?.done || {}).some(Boolean)) || (id === 'science' && typeof ScienceSubject !== 'undefined' && Object.values(ScienceSubject.state?.done || {}).some(Boolean)) || (id === 'coding' && typeof CodingSubject !== 'undefined' && Object.values(CodingSubject.state?.done || {}).some(Boolean))).length} of ${AVAILABLE_SUBJECTS.length} subjects explored`)));
 }
 function renderGreeting() {
   let bubble;
@@ -216,17 +235,16 @@ function renderGreeting() {
   return el('section', {id:'learnerGreeting',class:'card hello','aria-label':'Your playground profile'},el('div', {class:'mascot','aria-hidden':'true'}, '🦉'),bubble);
 }
 function updateHeader() {
-  const scienceStars = typeof ScienceSubject !== 'undefined' ? ScienceSubject.state?.stars || 0 : 0;
-  const englishStars = typeof EnglishSubject !== 'undefined' ? EnglishSubject.state?.stars || 0 : 0;
   const path = location.hash.slice(1);
   const science = path === 'science' || path.startsWith('science/');
   const english = path === 'english' || path.startsWith('english/');
-  const math = path === 'math' || path.startsWith('math/');
-  $('#hdrStars').textContent = english ? `⭐ ${englishStars} English` : science ? `⭐ ${scienceStars} Science` : math ? `⭐ ${S.stars} Math` : `⭐ ${S.stars + englishStars + scienceStars} Total`;
+  const coding = path === 'coding' || path.startsWith('coding/');
+  const available = typeof Pet !== 'undefined' ? Pet.availableStars : null;
+  $('#hdrStars').textContent = available === null ? '⭐ Stars unavailable' : `⭐ ${available} available`;
   $('#btnSound').textContent = S.sound ? '🔊' : '🔇';
   $('#btnSound').setAttribute('aria-label', S.sound ? 'Mute sound' : 'Enable sound');
   $('#btnSound').setAttribute('aria-pressed', String(S.sound));
-  $('#btnTro').setAttribute('aria-label', english ? 'English trophies' : science ? 'Science trophies' : 'Math trophies');
+  $('#btnTro').setAttribute('aria-label', coding ? 'Computer Science records' : english ? 'English trophies' : science ? 'Science trophies' : 'Math trophies');
 }
 function backBar(title, color) {
   return el('div', {class: 'bar'}, el('button', {class: 'btn small', onclick: goHome}, '🏠 Home'), el('h1', {style: `color:${color}`}, title));
@@ -239,9 +257,9 @@ const SUBJECTS = {
   social: {title: 'Social Studies', icon: '🗺️', color: '#98631a', tagline: 'Explore a place. Compare voices. Make a case.', mission: 'A Town for Everyone', objective: 'Read a map and compare sources before making a community recommendation.', reference: 3},
   coding: {title: 'Computer Science', icon: '🤖', color: '#4e609e', tagline: 'Think in steps. Test an idea. Fix the bug.', mission: 'Robot Delivery', objective: 'Trace, debug, and test a sequence of instructions.', reference: 4},
 };
-const AVAILABLE_SUBJECTS = ['math', 'english', 'science'];
+const AVAILABLE_SUBJECTS = ['math', 'english', 'science', 'coding'];
 const PROGRESS_KEY = 'learningPlayground.missions.v1';
-let storageAvailable = true;
+let storageAvailable = mathStorageAvailable;
 function readProgress() {
   const progress = {version: 1, modes: {}, results: {}};
   try {
@@ -267,12 +285,23 @@ function saveProgress() {
   catch { storageAvailable = false; }
   $('#storageNote').textContent = storageAvailable ? '' : 'Saving is unavailable. You can still play; progress may disappear when you leave.';
 }
+function reportStorageFailure() { storageAvailable = false; saveProgress(); }
+function petEarnings() {
+  if (!storageAvailable || !mathStorageAvailable || typeof EnglishSubject === 'undefined' || typeof ScienceSubject === 'undefined' || typeof CodingSubject === 'undefined') return null;
+  const amounts = [S.petEarned,EnglishSubject.state?.petEarned,ScienceSubject.state?.petEarned,CodingSubject.state?.petEarned];
+  if (amounts.some(value => !Number.isSafeInteger(value) || value < 0)) return null;
+  const total = amounts.reduce((sum,value) => sum + value,0);
+  return Number.isSafeInteger(total) ? total : null;
+}
 function focusHeading() {
   const heading = document.querySelector('.screen.active h1');
   if (heading) { heading.tabIndex = -1; heading.focus({preventScroll: true}); }
 }
 function subjectBackBar(title) {
   return el('div', {class: 'bar'}, el('button', {class: 'btn small', onclick: () => navigate('subjects')}, '← Subjects'), el('h1', {}, title));
+}
+function activityArt() {
+  return el('img', {class:'activity-art',src:'activity-adventure.svg',alt:'',width:'720',height:'200'});
 }
 function subjectArt(id) {
   const canvas = el('canvas', {class: 'subject-art', width: '720', height: '300', 'aria-hidden': 'true'});
@@ -584,17 +613,30 @@ function renderMissionResults(id) {
 
 // ---------- boot ----------
 $('#logo').addEventListener('click', () => navigate('subjects'));
+$('#btnPet').addEventListener('click', () => {
+  const active = (G && !G.over) || M || (typeof EnglishSubject !== 'undefined' && EnglishSubject.round) ||
+    (typeof ScienceSubject !== 'undefined' && ScienceSubject.round) || (typeof CodingSubject !== 'undefined' && CodingSubject.round);
+  if (active && !confirm('Leave this activity for your pet? Unfinished answers will not be restored.')) return;
+  navigate('pet');
+});
 $('#btnTro').addEventListener('click', () => {
   const subject = location.hash.slice(1).split('/')[0];
-  if (subject === 'english' || subject === 'science') navigate(`${subject}/trophies`);
+  if (subject === 'english' || subject === 'science' || subject === 'coding') navigate(`${subject}/trophies`);
   else openTrophies();
 });
 $('#btnSound').addEventListener('click', () => { S.sound = !S.sound; save(); updateHeader(); SND.ok(); });
-if (typeof EnglishSubject !== 'undefined') EnglishSubject.init({el,$,navigate,show,subjectBackBar,focusHeading,SND,confetti,updateHeader,art:subjectArt,
+if (typeof EnglishSubject !== 'undefined') EnglishSubject.init({el,$,navigate,show,subjectBackBar,focusHeading,SND,confetti,updateHeader,art:activityArt,
   legacyResults:() => renderMissionResults('english'),storageFailure:() => {storageAvailable = false;saveProgress();}});
-if (typeof ScienceSubject !== 'undefined') ScienceSubject.init({el,$,navigate,show,subjectBackBar,focusHeading,toast,SND,confetti,fmt,updateHeader,
+if (typeof ScienceSubject !== 'undefined') ScienceSubject.init({el,$,navigate,show,subjectBackBar,focusHeading,toast,SND,confetti,fmt,updateHeader,art:activityArt,
   name:() => S.name || 'Explorer',legacy:() => ({result:P.results.science,mode:P.modes.science}),storageFailure:() => {storageAvailable = false;saveProgress();}});
+if (typeof CodingSubject !== 'undefined') CodingSubject.init({el,$,navigate,show,subjectBackBar,focusHeading,SND,confetti,updateHeader,art:activityArt,
+  legacyResults:() => renderMissionResults('coding'),storageFailure:() => {storageAvailable = false;saveProgress();}});
+if (mathStorageAvailable) save();
+if (typeof Pet !== 'undefined') Pet.init({el,$,navigate,show,focusHeading,storageFailure:reportStorageFailure,getEarnings:petEarnings,updateHeader,SND});
 updateHeader();
 saveProgress();
 window.addEventListener('hashchange', route);
 route();
+if (window.isSecureContext && /^https?:$/.test(location.protocol) && 'serviceWorker' in navigator) {
+  navigator.serviceWorker.register('./service-worker.js').catch(() => {});
+}
